@@ -22,17 +22,40 @@ async function saveDebug(page, name) {
 
 async function login(page) {
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded" });
-  await page.fill('input[name="email"]', process.env.CHO_TATSU_EMAIL);
-  await page.fill('input[name="password"]', process.env.CHO_TATSU_PASSWORD);
+
+  await page.waitForSelector('input[name="email"]', { timeout: 20000 });
+  await page.waitForSelector('input[name="password"]', { timeout: 20000 });
+
+  await page.locator('input[name="email"]').click();
+  await page.locator('input[name="email"]').fill('');
+  await page.locator('input[name="email"]').type(process.env.CHO_TATSU_EMAIL, { delay: 80 });
+
+  await page.locator('input[name="password"]').click();
+  await page.locator('input[name="password"]').fill('');
+  await page.locator('input[name="password"]').type(process.env.CHO_TATSU_PASSWORD, { delay: 100 });
+
+  const submit = page.locator('button[type="submit"]');
 
   await Promise.allSettled([
-    page.waitForNavigation({ waitUntil: "networkidle", timeout: 20000 }),
-    page.locator('button[type="submit"]').click({ timeout: 10000 })
+    page.waitForLoadState('networkidle', { timeout: 20000 }),
+    submit.click({ timeout: 10000 })
   ]);
 
-  await page.waitForTimeout(5000);
-  if (page.url().includes('/login')) {
+  // URL遷移 or ログイン後っぽい画面を少し長めに待つ
+  const loginSuccess = await Promise.race([
+    page.waitForURL((url) => !url.toString().includes('/login'), { timeout: 15000 }).then(() => true).catch(() => false),
+    page.locator('text=ログアウト, text=案件, text=人材').first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false),
+  ]);
+
+  await page.waitForTimeout(3000);
+
+  if (!loginSuccess || page.url().includes('/login')) {
     await saveDebug(page, 'login_failed');
+
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    console.log('LOGIN_FAILED_URL=', page.url());
+    console.log('LOGIN_FAILED_TEXT=', bodyText.slice(0, 2000));
+
     throw new Error('ログインに失敗しました。artifacts/login_failed.* を確認してください');
   }
 }
@@ -160,8 +183,39 @@ function parseTalent(item) {
 
 export async function scrapeChoTatsu() {
   await ensureArtifactsDir();
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 2200 } });
+const browser = await chromium.launch({
+  headless: true,
+  args: [
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-blink-features=AutomationControlled'
+  ]
+});
+
+const context = await browser.newContext({
+  viewport: { width: 1440, height: 2200 },
+  locale: 'ja-JP',
+  timezoneId: 'Asia/Tokyo',
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+  extraHTTPHeaders: {
+    'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7'
+  }
+});
+
+await context.addInitScript(() => {
+  Object.defineProperty(navigator, 'webdriver', {
+    get: () => undefined
+  });
+  Object.defineProperty(navigator, 'languages', {
+    get: () => ['ja-JP', 'ja']
+  });
+  Object.defineProperty(navigator, 'plugins', {
+    get: () => [1, 2, 3, 4]
+  });
+});
+
+const page = await context.newPage();
+
 
   try {
     await login(page);
