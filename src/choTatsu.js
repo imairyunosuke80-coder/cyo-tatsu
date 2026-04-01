@@ -5,763 +5,398 @@ const BASE_URL = "https://cho-tatsu.com";
 const LOGIN_URL = `${BASE_URL}/login`;
 const PROJECTS_URL = `${BASE_URL}/partners/projects`;
 const TALENTS_URL = `${BASE_URL}/partners/talents`;
+const ARTIFACTS_DIR = "artifacts";
 
 const PROJECT_LABELS = [
-  "案件タイトル",
-  "案件名",
-  "会社名",
-  "社名",
-  "企業名",
-  "優先度",
-  "単価",
-  "単金",
-  "職種",
-  "ポジション",
-  "スキル",
-  "必須スキル",
-  "尚可スキル",
-  "年齢制限",
-  "年齢",
-  "リモート",
-  "商流",
-  "商流制限",
-  "個人事業主",
-  "外国籍",
-  "国籍",
-  "勤務地",
-  "都道府県",
-  "開始時期",
-  "参画時期",
-  "案件情報"
+  "案件タイトル", "案件名", "会社名", "社名", "企業名", "優先度", "単価", "単金", "職種", "ポジション",
+  "スキル", "必須スキル", "尚可スキル", "年齢制限", "年齢", "リモート", "リモート条件", "商流", "商流制限",
+  "個人事業主", "外国籍", "国籍", "勤務地", "都道府県", "開始時期", "開始", "参画時期", "募集人数",
+  "面談", "精算", "期間", "備考"
 ];
 
 const TALENT_LABELS = [
-  "人材タイトル",
-  "人材名",
-  "氏名",
-  "会社名",
-  "社名",
-  "企業名",
-  "優先度",
-  "単価",
-  "希望単価",
-  "年齢",
-  "所属",
-  "職種",
-  "ポジション",
-  "希望職種",
-  "スキル",
-  "リモート",
-  "リモート条件",
-  "国籍",
-  "外国籍",
-  "勤務地",
-  "都道府県",
-  "最寄駅",
-  "開始時期",
-  "開始可能時期",
-  "参画可能時期",
-  "人材情報"
+  "人材タイトル", "氏名", "人材名", "会社名", "社名", "企業名", "優先度", "希望単価", "単価", "単金",
+  "年齢", "所属", "職種", "ポジション", "希望職種", "スキル", "稼働率", "稼働", "リモート", "リモート条件",
+  "国籍", "外国籍", "勤務地", "都道府県", "最寄駅", "開始可能時期", "参画可能時期", "開始時期", "開始",
+  "備考"
 ];
 
-const NOISE_PATTERNS = [
-  /連携中の案件を探す/,
-  /連携中の人材を探す/,
-  /連携企業を増やすと/,
-  /案件を絞り込む/,
-  /人材を絞り込む/,
-  /案件を見る/,
-  /人材を見る/,
-  /表示中\s*\/\s*全\d+件/,
-  /^\d+\-\d+件\s*表示中/,
-  /お問合せ/,
-  /利用規約/,
-  /チョータツとは/,
-  /ログイン/,
-  /パスワードを忘れた方はこちら/,
-  /アカウントをお持ちでない方はこちら/,
-  /お申し込みはこちら/
+const NOISE_LINE_PATTERNS = [
+  /^詳細を見る$/,
+  /^一覧へ戻る$/,
+  /^戻る$/,
+  /^検索$/,
+  /^並び替え$/,
+  /^お気に入り$/,
+  /^気になる$/,
+  /^相談する$/,
+  /^エントリー$/,
+  /^応募する$/,
+  /^ログアウト$/,
+  /^マイページ$/,
+  /^案件検索$/,
+  /^人材検索$/,
+  /^次へ$/,
+  /^前へ$/,
+  /^Page \d+$/i,
+  /^TOP$/,
+  /^HOME$/,
+  /^MENU$/,
+  /^Copy$/i,
+  /^Copied$/i
+];
+
+const PREFECTURES = [
+  "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",
+  "茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県",
+  "新潟県","富山県","石川県","福井県","山梨県","長野県",
+  "岐阜県","静岡県","愛知県","三重県",
+  "滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県",
+  "鳥取県","島根県","岡山県","広島県","山口県",
+  "徳島県","香川県","愛媛県","高知県",
+  "福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"
 ];
 
 function clean(text) {
+  return String(text || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function splitLines(text) {
   return String(text || "")
-    .replace(/\u00A0/g, " ")
     .replace(/\r/g, "")
-    .replace(/[ \t]+/g, " ")
-    .trim();
+    .split(/\n+/)
+    .map(line => clean(line))
+    .filter(Boolean)
+    .filter(line => !isNoiseLine(line));
 }
 
 function preserveMultiline(text) {
-  return String(text || "")
-    .replace(/\u00A0/g, " ")
-    .replace(/\r/g, "")
-    .split(/\n+/)
-    .map((line) => clean(line))
-    .filter(Boolean)
-    .join("\n");
+  return splitLines(text).join("\n");
 }
 
-function escapeRegExp(text) {
-  return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function isNoiseLine(line) {
+  const v = clean(line);
+  if (!v) return true;
+  if (NOISE_LINE_PATTERNS.some(re => re.test(v))) return true;
+  if (/^(案件一覧|人材一覧)$/.test(v)) return true;
+  return false;
 }
 
-function countLabelHits(text, labels) {
-  const source = preserveMultiline(text);
-  return labels.reduce((count, label) => count + (source.includes(label) ? 1 : 0), 0);
+function uniq(values) {
+  return [...new Set(values.filter(Boolean))];
 }
 
-function isNoiseText(text) {
-  const source = preserveMultiline(text);
-  if (!source) return true;
-  return NOISE_PATTERNS.some((pattern) => pattern.test(source));
+function toAbsoluteUrl(href) {
+  if (!href) return "";
+  try {
+    return new URL(href, BASE_URL).toString();
+  } catch {
+    return href;
+  }
 }
 
-function pickFirstNonEmpty(...values) {
-  return values.find((v) => clean(v)) || "";
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizePriceToMan(text) {
-  const value = clean(text);
-  if (!value) return "";
-  return value
-    .replace(/税込/g, "")
-    .replace(/税抜/g, "")
-    .replace(/月額/g, "")
-    .replace(/万円/g, "")
-    .replace(/万\/月/g, "")
-    .replace(/万/g, "")
-    .replace(/円/g, "")
-    .replace(/\s+/g, "")
+  const raw = clean(text);
+  if (!raw) return "";
+  const normalized = raw
+    .replace(/税込|税別|月額|円|万\/月|万円\/月|万円|万/g, " ")
+    .replace(/〜/g, "-")
+    .replace(/～/g, "-")
+    .replace(/[^0-9.\-]/g, "")
+    .replace(/\-+/g, "-")
+    .replace(/^\-|-$/g, "")
     .trim();
+  return normalized;
 }
 
 function extractPrefecture(text) {
   const value = clean(text);
   if (!value) return "";
-
-  const prefectures = [
-    "北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県",
-    "茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県",
-    "新潟県", "富山県", "石川県", "福井県", "山梨県", "長野県",
-    "岐阜県", "静岡県", "愛知県", "三重県",
-    "滋賀県", "京都府", "大阪府", "兵庫県", "奈良県", "和歌山県",
-    "鳥取県", "島根県", "岡山県", "広島県", "山口県",
-    "徳島県", "香川県", "愛媛県", "高知県",
-    "福岡県", "佐賀県", "長崎県", "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"
-  ];
-
-  return prefectures.find((p) => value.includes(p)) || value;
+  return PREFECTURES.find(p => value.includes(p)) || "";
 }
 
-function guessCompanyName(lines) {
-  return (
-    lines.find((line) =>
-      /(株式会社|合同会社|有限会社|Inc\.|LLC|Technology|テクノロジー)/i.test(line) &&
-      line.length <= 120
-    ) || ""
+function pickFirstNonEmpty(...values) {
+  for (const value of values) {
+    const v = clean(value);
+    if (v) return v;
+  }
+  return "";
+}
+
+function buildUniqueKey(prefix, url, title, company, price) {
+  const seed = pickFirstNonEmpty(url, `${title}__${company}__${price}`);
+  return `${prefix}::${seed}`;
+}
+
+function looksLikeLabelLine(line, labels) {
+  const value = clean(line);
+  if (!value) return false;
+  return labels.some(label => {
+    const l = escapeRegExp(label);
+    return new RegExp(`^${l}\\s*[:：]?$`).test(value) || new RegExp(`^${l}\\s*[:：]`).test(value);
+  });
+}
+
+function findLabeledValue(text, labels, allLabels) {
+  const source = String(text || "").replace(/\r/g, "");
+
+  for (const label of labels) {
+    const l = escapeRegExp(label);
+    const inline = source.match(new RegExp(`(?:^|\\n)${l}\\s*[:：]\\s*([^\\n]+)`, "i"));
+    if (inline?.[1]) return clean(inline[1]);
+  }
+
+  const lines = splitLines(source);
+  for (let i = 0; i < lines.length; i += 1) {
+    for (const label of labels) {
+      const l = escapeRegExp(label);
+      if (new RegExp(`^${l}\\s*[:：]\\s*(.+)$`, "i").test(lines[i])) {
+        return clean(lines[i].replace(new RegExp(`^${l}\\s*[:：]\\s*`, "i"), ""));
+      }
+      if (new RegExp(`^${l}\\s*[:：]?$`, "i").test(lines[i])) {
+        const next = lines[i + 1] || "";
+        if (next && !looksLikeLabelLine(next, allLabels)) return clean(next);
+      }
+    }
+  }
+
+  return "";
+}
+
+function findSectionText(text, labels, allLabels) {
+  const lines = splitLines(text);
+  for (let i = 0; i < lines.length; i += 1) {
+    const current = lines[i];
+    const hit = labels.find(label => {
+      const l = escapeRegExp(label);
+      return new RegExp(`^${l}\\s*[:：]?$`, "i").test(current) || new RegExp(`^${l}\\s*[:：]`, "i").test(current);
+    });
+    if (!hit) continue;
+
+    const inline = current.replace(new RegExp(`^${escapeRegExp(hit)}\\s*[:：]?\\s*`, "i"), "").trim();
+    const bucket = [];
+    if (inline) bucket.push(inline);
+
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = lines[j];
+      if (looksLikeLabelLine(next, allLabels)) break;
+      bucket.push(next);
+    }
+
+    const merged = bucket.map(clean).filter(Boolean).join(" / ");
+    if (merged) return merged;
+  }
+  return "";
+}
+
+function guessTitleFromLines(lines, labels, fallback = "") {
+  const blacklist = new Set(labels);
+  for (const line of lines) {
+    const v = clean(line);
+    if (!v) continue;
+    if (blacklist.has(v)) continue;
+    if (looksLikeLabelLine(v, labels)) continue;
+    if (v.length <= 1) continue;
+    if (/^(案件|人材)$/.test(v)) continue;
+    return v;
+  }
+  return clean(fallback);
+}
+
+function guessPrice(text, isTalent = false) {
+  const labeled = findLabeledValue(
+    text,
+    isTalent ? ["希望単価", "単価", "単金"] : ["単価", "単金", "希望単価"],
+    isTalent ? TALENT_LABELS : PROJECT_LABELS
   );
-}
-
-function guessPriority(lines) {
-  return lines.find((line) => /^(高|中|低|-|A|B|C)$/.test(line)) || "";
-}
-
-function guessPrice(text) {
-  const source = preserveMultiline(text);
-  const m = source.match(/(\d{1,3}(?:\s*[~〜\-～]\s*\d{1,3})?)\s*万円/);
-  return m ? clean(`${m[1]}万円`) : "";
-}
-
-function guessAge(text) {
-  const source = preserveMultiline(text);
-  const m = source.match(/(\d{2})歳/);
-  return m ? `${m[1]}歳` : "";
-}
-
-function guessNearestStation(lines) {
-  return lines.find((line) => /駅$/.test(line) && line.length <= 60) || "";
+  if (labeled) return normalizePriceToMan(labeled);
+  const m = String(text || "").match(/(\d{2,3}(?:\.\d+)?\s*(?:[-~〜～]\s*\d{2,3}(?:\.\d+)?)?)\s*万円/);
+  return m ? normalizePriceToMan(m[1]) : "";
 }
 
 function guessRemote(text) {
-  const source = preserveMultiline(text);
-  const candidates = [
-    "フルリモート",
-    "基本リモート",
-    "リモート併用",
-    "リモート可",
-    "一部リモート",
-    "フル常駐",
-    "基本出社",
-    "常駐"
-  ];
-  return candidates.find((w) => source.includes(w)) || "";
+  const labeled = findLabeledValue(text, ["リモート条件", "リモート"], [...PROJECT_LABELS, ...TALENT_LABELS]);
+  if (labeled) return labeled;
+  const hit = String(text || "").match(/(フルリモート|リモート可|一部リモート|出社併用|常駐)/);
+  return hit ? hit[1] : "";
 }
 
-function guessBooleanLike(text, leftWord, rightWord = "") {
-  const source = preserveMultiline(text);
-  const m = source.match(new RegExp(`${escapeRegExp(leftWord)}\\s*[:：]?\\s*(可|不可|相談可|相談不可)`));
-  if (m) return m[1];
-  if (rightWord) {
-    const m2 = source.match(new RegExp(`${escapeRegExp(rightWord)}\\s*[:：]?\\s*(可|不可|相談可|相談不可)`));
-    if (m2) return m2[1];
-  }
+function guessBooleanLike(text, labels) {
+  const labeled = findLabeledValue(text, labels, [...PROJECT_LABELS, ...TALENT_LABELS]);
+  if (labeled) return labeled;
   return "";
 }
 
-function isMetaLine(line, labels) {
-  if (!line) return true;
-  if (isNoiseText(line)) return true;
-  if (/^\d{4}\/\d{2}\/\d{2}/.test(line)) return true;
-  if (/^\d{1,3}万円$/.test(line)) return true;
-  if (/^\d{2}歳$/.test(line)) return true;
-  if (/^\d+\-\d+件/.test(line)) return true;
-  if (countLabelHits(line, labels) >= 3) return true;
-  if (labels.some((label) => line === label || line.startsWith(`${label}：`) || line.startsWith(`${label}:`))) return true;
-  return false;
+function mergeInfoText(cardText, detailText) {
+  return uniq([...splitLines(cardText), ...splitLines(detailText)]).join("\n");
 }
 
-function guessTitle(lines, labels, fallback = "") {
-  const title = lines.find((line) => {
-    if (line.length < 3 || line.length > 160) return false;
-    if (isMetaLine(line, labels)) return false;
-    return true;
-  });
-  return title || fallback || "";
-}
-
-function matchValue(text, labels) {
-  const source = preserveMultiline(text);
-  for (const label of labels) {
-    const escaped = escapeRegExp(label);
-    const patterns = [
-      new RegExp(`(?:^|\\n)\\s*${escaped}\\s*[:：]\\s*([^\\n]+)`, "i"),
-      new RegExp(`(?:^|\\n)\\s*${escaped}\\s*(?:\\n)+\\s*([^\\n]+)`, "i"),
-      new RegExp(`${escaped}\\s*[:：]?\\s*([^\\n]+)`, "i")
-    ];
-    for (const regex of patterns) {
-      const hit = source.match(regex);
-      if (hit?.[1]) return clean(hit[1]);
-    }
-  }
-  return "";
-}
-
-function mergeTextBlocks(...texts) {
-  const lines = [];
-  const seen = new Set();
-
-  for (const text of texts) {
-    const normalized = preserveMultiline(text);
-    if (!normalized) continue;
-
-    for (const line of normalized.split("\n")) {
-      const key = clean(line);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      lines.push(key);
-    }
-  }
-
-  return lines.join("\n");
-}
-
-function buildProjectRecord({ cardText, detailText, url, titleHint = "", heading = "" }) {
-  const merged = mergeTextBlocks(cardText, detailText);
-  const lines = merged.split("\n").map(clean).filter(Boolean);
-
-  const location = pickFirstNonEmpty(
-    matchValue(merged, ["勤務地", "場所", "勤務場所"]),
-    matchValue(merged, ["都道府県"]),
-    lines.find((line) => /都|道|府|県/.test(line) && line.length <= 30) || ""
-  );
-
-  const rawPrice = pickFirstNonEmpty(
-    matchValue(merged, ["単価", "単金", "金額", "月額"]),
-    guessPrice(merged)
-  );
+function buildProjectRecord(card, detail) {
+  const cardText = preserveMultiline(card?.text || "");
+  const detailText = preserveMultiline(detail?.text || "");
+  const mergedText = mergeInfoText(cardText, detailText);
+  const lines = splitLines(mergedText);
 
   const title = pickFirstNonEmpty(
-    clean(heading),
-    matchValue(merged, ["案件タイトル", "案件名", "タイトル"]),
-    guessTitle(lines, PROJECT_LABELS, clean(titleHint))
+    detail?.heading,
+    findLabeledValue(mergedText, ["案件タイトル", "案件名"], PROJECT_LABELS),
+    card?.anchorText,
+    guessTitleFromLines(lines, PROJECT_LABELS)
   );
 
-  return {
+  const companyName = pickFirstNonEmpty(
+    findLabeledValue(mergedText, ["会社名", "社名", "企業名"], PROJECT_LABELS)
+  );
+
+  const location = pickFirstNonEmpty(
+    findLabeledValue(mergedText, ["勤務地", "場所", "勤務場所", "都道府県"], PROJECT_LABELS),
+    findSectionText(mergedText, ["勤務地", "場所", "勤務場所"], PROJECT_LABELS)
+  );
+
+  const remoteCondition = pickFirstNonEmpty(
+    guessRemote(mergedText)
+  );
+
+  const skill = pickFirstNonEmpty(
+    findSectionText(mergedText, ["スキル", "必須スキル", "尚可スキル", "言語", "環境"], PROJECT_LABELS),
+    findLabeledValue(mergedText, ["スキル", "必須スキル", "尚可スキル"], PROJECT_LABELS)
+  );
+
+  const record = {
     captured_at: new Date().toISOString(),
     project_title: title,
     title,
-    company_name: pickFirstNonEmpty(
-      matchValue(merged, ["会社名", "社名", "企業名", "クライアント", "元請"]),
-      guessCompanyName(lines)
+    company_name: companyName,
+    priority: findLabeledValue(mergedText, ["優先度"], PROJECT_LABELS),
+    unit_price: findLabeledValue(mergedText, ["単価", "単金"], PROJECT_LABELS),
+    price_man: guessPrice(mergedText, false),
+    job_type: pickFirstNonEmpty(
+      findLabeledValue(mergedText, ["職種", "ポジション", "募集職種"], PROJECT_LABELS),
+      findSectionText(mergedText, ["職種", "ポジション", "募集職種"], PROJECT_LABELS)
     ),
-    priority: pickFirstNonEmpty(
-      matchValue(merged, ["優先度"]),
-      guessPriority(lines)
-    ),
-    unit_price: rawPrice,
-    price_man: normalizePriceToMan(rawPrice),
-    job_type: matchValue(merged, ["職種", "ポジション", "募集職種"]),
-    skill: pickFirstNonEmpty(
-      matchValue(merged, ["スキル", "必須スキル"]),
-      matchValue(merged, ["言語", "環境"])
-    ),
-    must_skill: matchValue(merged, ["必須スキル"]),
-    want_skill: matchValue(merged, ["尚可スキル"]),
+    skill,
     age_limit: pickFirstNonEmpty(
-      matchValue(merged, ["年齢制限"]),
-      guessAge(merged)
+      findLabeledValue(mergedText, ["年齢制限", "年齢"], PROJECT_LABELS)
     ),
-    remote: pickFirstNonEmpty(
-      matchValue(merged, ["リモート"]),
-      guessRemote(merged)
-    ),
-    remote_condition: pickFirstNonEmpty(
-      matchValue(merged, ["リモート条件", "リモート"]),
-      guessRemote(merged)
-    ),
-    commercial_flow: matchValue(merged, ["商流"]),
+    remote: remoteCondition,
+    remote_condition: remoteCondition,
+    commercial_flow: findLabeledValue(mergedText, ["商流"], PROJECT_LABELS),
     commercial_flow_limit: pickFirstNonEmpty(
-      matchValue(merged, ["商流制限"]),
-      matchValue(merged, ["商流"])
+      findLabeledValue(mergedText, ["商流制限", "商流"], PROJECT_LABELS)
     ),
-    sole_proprietor: pickFirstNonEmpty(
-      matchValue(merged, ["個人事業主", "個人可", "個人事業主可否"]),
-      guessBooleanLike(merged, "個人事業主", "個人可")
-    ),
-    nationality: matchValue(merged, ["国籍"]),
+    sole_proprietor: guessBooleanLike(mergedText, ["個人事業主"]),
     foreign_nationality: pickFirstNonEmpty(
-      matchValue(merged, ["外国籍", "外国籍可否"]),
-      guessBooleanLike(merged, "外国籍", "外国籍可否"),
-      matchValue(merged, ["国籍"])
+      findLabeledValue(mergedText, ["外国籍", "国籍"], PROJECT_LABELS)
     ),
+    nationality: findLabeledValue(mergedText, ["外国籍", "国籍"], PROJECT_LABELS),
     location,
-    prefecture: extractPrefecture(location),
+    prefecture: extractPrefecture(location || mergedText),
     start_date: pickFirstNonEmpty(
-      matchValue(merged, ["開始時期", "参画時期", "開始日"]),
-      matchValue(merged, ["開始"])
+      findLabeledValue(mergedText, ["開始時期", "開始", "参画時期"], PROJECT_LABELS),
+      findSectionText(mergedText, ["開始時期", "開始", "参画時期"], PROJECT_LABELS)
     ),
-    project_info: merged,
-    raw_text: merged,
-    url,
-    unique_key: url || `${title}__${merged.slice(0, 200)}`
+    project_info: mergedText,
+    raw_text: mergedText,
+    url: toAbsoluteUrl(card?.href || detail?.url || ""),
+    unique_key: buildUniqueKey("project", toAbsoluteUrl(card?.href || detail?.url || ""), title, companyName, guessPrice(mergedText, false))
   };
+
+  return record;
 }
 
-function buildTalentRecord({ cardText, detailText, url, titleHint = "", heading = "" }) {
-  const merged = mergeTextBlocks(cardText, detailText);
-  const lines = merged.split("\n").map(clean).filter(Boolean);
-
-  const location = pickFirstNonEmpty(
-    matchValue(merged, ["勤務地", "場所", "勤務場所"]),
-    matchValue(merged, ["都道府県"]),
-    lines.find((line) => /都|道|府|県/.test(line) && line.length <= 30) || ""
-  );
-
-  const rawPrice = pickFirstNonEmpty(
-    matchValue(merged, ["希望単価", "単価", "単金", "金額", "月額"]),
-    guessPrice(merged)
-  );
+function buildTalentRecord(card, detail) {
+  const cardText = preserveMultiline(card?.text || "");
+  const detailText = preserveMultiline(detail?.text || "");
+  const mergedText = mergeInfoText(cardText, detailText);
+  const lines = splitLines(mergedText);
 
   const title = pickFirstNonEmpty(
-    clean(heading),
-    matchValue(merged, ["人材タイトル", "人材名", "氏名", "タイトル"]),
-    guessTitle(lines, TALENT_LABELS, clean(titleHint))
+    detail?.heading,
+    findLabeledValue(mergedText, ["人材タイトル", "氏名", "人材名"], TALENT_LABELS),
+    card?.anchorText,
+    guessTitleFromLines(lines, TALENT_LABELS)
   );
 
-  return {
+  const location = pickFirstNonEmpty(
+    findLabeledValue(mergedText, ["勤務地", "場所", "勤務場所", "都道府県"], TALENT_LABELS),
+    findSectionText(mergedText, ["勤務地", "場所", "勤務場所"], TALENT_LABELS)
+  );
+
+  const remoteCondition = pickFirstNonEmpty(
+    guessRemote(mergedText)
+  );
+
+  const skill = pickFirstNonEmpty(
+    findSectionText(mergedText, ["スキル", "言語", "環境"], TALENT_LABELS),
+    findLabeledValue(mergedText, ["スキル"], TALENT_LABELS)
+  );
+
+  const companyName = pickFirstNonEmpty(
+    findLabeledValue(mergedText, ["会社名", "社名", "企業名"], TALENT_LABELS)
+  );
+
+  const record = {
     captured_at: new Date().toISOString(),
     talent_title: title,
     name: title,
-    company_name: pickFirstNonEmpty(
-      matchValue(merged, ["会社名", "社名", "企業名"]),
-      guessCompanyName(lines)
+    company_name: companyName,
+    priority: findLabeledValue(mergedText, ["優先度"], TALENT_LABELS),
+    desired_unit_price: findLabeledValue(mergedText, ["希望単価", "単価", "単金"], TALENT_LABELS),
+    price_man: guessPrice(mergedText, true),
+    age: findLabeledValue(mergedText, ["年齢"], TALENT_LABELS),
+    affiliation: findLabeledValue(mergedText, ["所属"], TALENT_LABELS),
+    job_type: pickFirstNonEmpty(
+      findLabeledValue(mergedText, ["職種", "ポジション", "希望職種"], TALENT_LABELS),
+      findSectionText(mergedText, ["職種", "ポジション", "希望職種"], TALENT_LABELS)
     ),
-    priority: pickFirstNonEmpty(
-      matchValue(merged, ["優先度"]),
-      guessPriority(lines)
-    ),
-    desired_unit_price: rawPrice,
-    price_man: normalizePriceToMan(rawPrice),
-    age: pickFirstNonEmpty(
-      matchValue(merged, ["年齢"]),
-      guessAge(merged)
-    ),
-    affiliation: matchValue(merged, ["所属"]),
-    job_type: matchValue(merged, ["職種", "ポジション", "希望職種"]),
-    skill: pickFirstNonEmpty(
-      matchValue(merged, ["スキル"]),
-      matchValue(merged, ["言語", "環境"])
-    ),
-    remote: pickFirstNonEmpty(
-      matchValue(merged, ["リモート"]),
-      guessRemote(merged)
-    ),
-    remote_condition: pickFirstNonEmpty(
-      matchValue(merged, ["リモート条件", "リモート"]),
-      guessRemote(merged)
-    ),
+    skill,
+    remote: remoteCondition,
+    remote_condition: remoteCondition,
     nationality: pickFirstNonEmpty(
-      matchValue(merged, ["国籍"]),
-      matchValue(merged, ["外国籍"])
+      findLabeledValue(mergedText, ["国籍", "外国籍"], TALENT_LABELS)
     ),
     location,
-    prefecture: extractPrefecture(location),
-    nearest_station: pickFirstNonEmpty(
-      matchValue(merged, ["最寄駅"]),
-      guessNearestStation(lines)
-    ),
-    utilization: matchValue(merged, ["稼働率", "稼働"]),
-    available_from: pickFirstNonEmpty(
-      matchValue(merged, ["開始可能時期", "参画可能時期", "開始時期"]),
-      matchValue(merged, ["開始"])
-    ),
+    prefecture: extractPrefecture(location || mergedText),
+    nearest_station: findLabeledValue(mergedText, ["最寄駅"], TALENT_LABELS),
     start_date: pickFirstNonEmpty(
-      matchValue(merged, ["開始可能時期", "参画可能時期", "開始時期"]),
-      matchValue(merged, ["開始"])
+      findLabeledValue(mergedText, ["開始可能時期", "参画可能時期", "開始時期", "開始"], TALENT_LABELS),
+      findSectionText(mergedText, ["開始可能時期", "参画可能時期", "開始時期", "開始"], TALENT_LABELS)
     ),
-    talent_info: merged,
-    raw_text: merged,
-    url,
-    unique_key: url || `${title}__${merged.slice(0, 200)}`
+    available_from: pickFirstNonEmpty(
+      findLabeledValue(mergedText, ["開始可能時期", "参画可能時期", "開始時期", "開始"], TALENT_LABELS)
+    ),
+    utilization: pickFirstNonEmpty(
+      findLabeledValue(mergedText, ["稼働率", "稼働"], TALENT_LABELS)
+    ),
+    talent_info: mergedText,
+    raw_text: mergedText,
+    url: toAbsoluteUrl(card?.href || detail?.url || ""),
+    unique_key: buildUniqueKey("talent", toAbsoluteUrl(card?.href || detail?.url || ""), title, companyName, guessPrice(mergedText, true))
   };
+
+  return record;
 }
 
 async function ensureArtifactsDir() {
-  await fs.mkdir("artifacts", { recursive: true });
+  await fs.mkdir(ARTIFACTS_DIR, { recursive: true });
+}
+
+async function saveJson(name, value) {
+  await ensureArtifactsDir();
+  await fs.writeFile(`${ARTIFACTS_DIR}/${name}.json`, JSON.stringify(value, null, 2), "utf8");
 }
 
 async function saveDebug(page, name) {
   await ensureArtifactsDir();
-  await page.screenshot({ path: `artifacts/${name}.png`, fullPage: true });
-  await fs.writeFile(`artifacts/${name}.html`, await page.content(), "utf8");
+  await page.screenshot({ path: `${ARTIFACTS_DIR}/${name}.png`, fullPage: true }).catch(() => {});
+  await fs.writeFile(`${ARTIFACTS_DIR}/${name}.html`, await page.content(), "utf8").catch(() => {});
 }
 
-async function saveJson(name, data) {
-  await ensureArtifactsDir();
-  await fs.writeFile(`artifacts/${name}.json`, JSON.stringify(data, null, 2), "utf8");
-}
-
-async function login(page) {
-  await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded" });
-
-  await page.waitForSelector('input[name="email"]', { timeout: 20000 });
-  await page.waitForSelector('input[name="password"]', { timeout: 20000 });
-
-  await page.locator('input[name="email"]').click();
-  await page.locator('input[name="email"]').fill("");
-  await page.locator('input[name="email"]').type(process.env.CHO_TATSU_EMAIL, { delay: 60 });
-
-  await page.locator('input[name="password"]').click();
-  await page.locator('input[name="password"]').fill("");
-  await page.locator('input[name="password"]').type(process.env.CHO_TATSU_PASSWORD, { delay: 80 });
-
-  const submit = page.locator('button[type="submit"]');
-
-  await Promise.allSettled([
-    page.waitForLoadState("networkidle", { timeout: 20000 }),
-    submit.click({ timeout: 10000 })
-  ]);
-
-  const loginSuccess = await Promise.race([
-    page.waitForURL((url) => !url.toString().includes("/login"), { timeout: 15000 }).then(() => true).catch(() => false),
-    page.locator("text=案件").first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false)
-  ]);
-
-  await page.waitForTimeout(2500);
-
-  if (!loginSuccess || page.url().includes("/login")) {
-    await saveDebug(page, "login_failed");
-    throw new Error("ログインに失敗しました。artifacts/login_failed.* を確認してください");
-  }
-}
-
-async function exhaustPage(page) {
-  let previousHeight = -1;
-
-  for (let i = 0; i < 25; i++) {
-    const height = await page.evaluate(() => document.body.scrollHeight);
-    if (height === previousHeight) break;
-    previousHeight = height;
-    await page.mouse.wheel(0, 5000);
-    await page.waitForTimeout(1200);
-  }
-
-  for (let i = 0; i < 10; i++) {
-    const nextButton = page.locator(
-      'button:has-text("次へ"), a:has-text("次へ"), button[aria-label*="次"], a[aria-label*="次"]'
-    );
-
-    if (!(await nextButton.count())) break;
-
-    const first = nextButton.first();
-    const disabled = await first.isDisabled().catch(() => false);
-    if (disabled) break;
-
-    await Promise.allSettled([
-      page.waitForLoadState("networkidle", { timeout: 15000 }),
-      first.click({ timeout: 5000 })
-    ]);
-
-    await page.waitForTimeout(1500);
-  }
-}
-
-async function collectListingCards(page, dataType) {
-  const detailPrefix = dataType === "project" ? "/partners/projects/" : "/partners/talents/";
-  const listPath = dataType === "project" ? "/partners/projects" : "/partners/talents";
-  const labels = dataType === "project" ? PROJECT_LABELS : TALENT_LABELS;
-
-  const rawCards = await page.locator(`a[href*="${detailPrefix}"]`).evaluateAll(
-    (anchors, payload) => {
-      const { detailPrefix, listPath, labels, noisePatterns } = payload;
-
-      const clean = (text) =>
-        String(text || "")
-          .replace(/\u00A0/g, " ")
-          .replace(/\r/g, "")
-          .replace(/[ \t]+/g, " ")
-          .trim();
-
-      const preserve = (text) =>
-        String(text || "")
-          .replace(/\u00A0/g, " ")
-          .replace(/\r/g, "")
-          .split(/\n+/)
-          .map((line) => clean(line))
-          .filter(Boolean)
-          .join("\n");
-
-      const noiseRegexes = noisePatterns.map((p) => new RegExp(p));
-      const containsNoise = (text) => noiseRegexes.some((r) => r.test(text));
-      const labelHits = (text) => labels.reduce((n, label) => n + (text.includes(label) ? 1 : 0), 0);
-
-      const results = [];
-
-      for (const anchor of anchors) {
-        const href = anchor.href || "";
-        if (!href) continue;
-
-        let pathname = "";
-        try {
-          pathname = new URL(href).pathname;
-        } catch {
-          continue;
-        }
-
-        if (!pathname.startsWith(detailPrefix)) continue;
-        if (pathname === listPath) continue;
-
-        let best = null;
-        let node = anchor;
-
-        for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
-          const text = preserve(node.innerText || "");
-          if (!text) continue;
-          if (text.length < 40 || text.length > 2400) continue;
-
-          let score = 0;
-          score += labelHits(text) * 120;
-          score -= Math.abs(text.length - 450) / 6;
-          score -= depth * 10;
-
-          if (containsNoise(text)) score -= 600;
-          if (node.tagName === "ARTICLE") score += 120;
-          if (node.tagName === "LI") score += 80;
-          if (node.tagName === "A") score += 20;
-
-          if (!best || score > best.score) {
-            best = { text, score };
-          }
-        }
-
-        const cardText = best?.text || preserve(anchor.innerText || "");
-        if (!cardText) continue;
-        if (containsNoise(cardText)) continue;
-
-        const anchorText = preserve(anchor.innerText || "");
-        results.push({
-          url: href,
-          anchor_text: anchorText,
-          card_text: cardText
-        });
-      }
-
-      const unique = [];
-      const seen = new Set();
-
-      for (const item of results) {
-        const key = item.url;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        unique.push(item);
-      }
-
-      return unique;
-    },
-    {
-      detailPrefix,
-      listPath,
-      labels,
-      noisePatterns: NOISE_PATTERNS.map((p) => p.source)
-    }
-  );
-
-  const filtered = rawCards.filter((item) => {
-    if (!item?.url || !item?.card_text) return false;
-    if (isNoiseText(item.card_text)) return false;
-    if (countLabelHits(item.card_text, labels) === 0 && item.card_text.length < 80) return false;
-    return true;
-  });
-
-  await saveJson(`${dataType}_cards`, filtered.slice(0, 50));
-  return filtered;
-}
-
-async function extractDetailText(page, dataType) {
-  const labels = dataType === "project" ? PROJECT_LABELS : TALENT_LABELS;
-
-  const bestText = await page.evaluate(
-    ({ labels, noisePatterns }) => {
-      const clean = (text) =>
-        String(text || "")
-          .replace(/\u00A0/g, " ")
-          .replace(/\r/g, "")
-          .replace(/[ \t]+/g, " ")
-          .trim();
-
-      const preserve = (text) =>
-        String(text || "")
-          .replace(/\u00A0/g, " ")
-          .replace(/\r/g, "")
-          .split(/\n+/)
-          .map((line) => clean(line))
-          .filter(Boolean)
-          .join("\n");
-
-      const noiseRegexes = noisePatterns.map((p) => new RegExp(p));
-      const containsNoise = (text) => noiseRegexes.some((r) => r.test(text));
-      const labelHits = (text) => labels.reduce((n, label) => n + (text.includes(label) ? 1 : 0), 0);
-
-      const nodes = Array.from(
-        document.querySelectorAll("main, article, section, div, li")
-      );
-
-      let best = null;
-
-      for (const node of nodes) {
-        const text = preserve(node.innerText || "");
-        if (!text) continue;
-        if (text.length < 80 || text.length > 5000) continue;
-
-        let score = 0;
-        score += labelHits(text) * 140;
-        score -= Math.abs(text.length - 1200) / 8;
-
-        if (containsNoise(text)) score -= 800;
-        if (node.tagName === "MAIN") score += 180;
-        if (node.tagName === "ARTICLE") score += 150;
-        if (text.includes("案件情報") || text.includes("人材情報")) score += 150;
-
-        if (!best || score > best.score) {
-          best = { text, score };
-        }
-      }
-
-      return best?.text || preserve(document.body?.innerText || "");
-    },
-    {
-      labels,
-      noisePatterns: NOISE_PATTERNS.map((p) => p.source)
-    }
-  );
-
-  return preserveMultiline(bestText);
-}
-
-async function extractHeading(page) {
-  const h1 = await page.locator("h1").first().textContent().catch(() => "");
-  const h2 = await page.locator("h2").first().textContent().catch(() => "");
-  return clean(h1 || h2 || "");
-}
-
-async function processCardsToRecords(context, cards, dataType) {
-  if (!cards.length) return [];
-
-  const concurrency = Math.min(4, cards.length);
-  const results = new Array(cards.length);
-  let cursor = 0;
-  let sampleSaved = false;
-
-  const workers = Array.from({ length: concurrency }, async () => {
-    const detailPage = await context.newPage();
-
-    try {
-      while (true) {
-        const index = cursor++;
-        if (index >= cards.length) break;
-
-        const card = cards[index];
-        let detailText = "";
-        let heading = "";
-
-        try {
-          await detailPage.goto(card.url, { waitUntil: "domcontentloaded", timeout: 30000 });
-          await detailPage.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
-
-          heading = await extractHeading(detailPage);
-          detailText = await extractDetailText(detailPage, dataType);
-
-          if (!sampleSaved) {
-            sampleSaved = true;
-            await saveDebug(detailPage, `${dataType}_detail_sample`);
-          }
-        } catch {
-          detailText = "";
-        }
-
-        const record =
-          dataType === "project"
-            ? buildProjectRecord({
-                cardText: card.card_text,
-                detailText,
-                url: card.url,
-                titleHint: card.anchor_text,
-                heading
-              })
-            : buildTalentRecord({
-                cardText: card.card_text,
-                detailText,
-                url: card.url,
-                titleHint: card.anchor_text,
-                heading
-              });
-
-        results[index] = record;
-      }
-    } finally {
-      await detailPage.close();
-    }
-  });
-
-  await Promise.all(workers);
-
-  const deduped = [];
-  const seen = new Set();
-
-  for (const row of results.filter(Boolean)) {
-    const key = row.unique_key || row.url || `${row.project_title || row.talent_title}__${row.raw_text?.slice(0, 200)}`;
-    if (!key || seen.has(key)) continue;
-    if (isNoiseText(row.raw_text || row.project_info || row.talent_info || "")) continue;
-    seen.add(key);
-    deduped.push(row);
-  }
-
-  return deduped;
-}
-
-export async function scrapeChoTatsu() {
-  await ensureArtifactsDir();
-
+async function buildBrowser() {
   const browser = await chromium.launch({
     headless: true,
     args: [
@@ -775,41 +410,287 @@ export async function scrapeChoTatsu() {
     viewport: { width: 1440, height: 2200 },
     locale: "ja-JP",
     timezoneId: "Asia/Tokyo",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-    extraHTTPHeaders: {
-      "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"
-    }
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
   });
 
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-    Object.defineProperty(navigator, "languages", { get: () => ["ja-JP", "ja"] });
-    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4] });
+    Object.defineProperty(navigator, "languages", { get: () => ["ja-JP", "ja", "en-US", "en"] });
+    Object.defineProperty(navigator, "plugins", {
+      get: () => [{ name: "Chrome PDF Plugin" }, { name: "Chrome PDF Viewer" }, { name: "Native Client" }]
+    });
   });
 
+  return { browser, context };
+}
+
+async function login(page) {
+  const email = process.env.CHO_TATSU_EMAIL;
+  const password = process.env.CHO_TATSU_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error("CHO_TATSU_EMAIL / CHO_TATSU_PASSWORD が未設定です");
+  }
+
+  await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForSelector('input[name="email"]', { timeout: 30000 });
+  await page.waitForSelector('input[name="password"]', { timeout: 30000 });
+
+  await page.locator('input[name="email"]').click();
+  await page.locator('input[name="email"]').fill("");
+  await page.locator('input[name="email"]').type(email, { delay: 40 });
+  await page.locator('input[name="password"]').click();
+  await page.locator('input[name="password"]').fill("");
+  await page.locator('input[name="password"]').type(password, { delay: 40 });
+
+  const submit = page.locator('button[type="submit"], input[type="submit"]');
+  await submit.first().click({ timeout: 10000 });
+
+  try {
+    await page.waitForFunction(() => !location.pathname.startsWith("/login"), { timeout: 30000 });
+  } catch {
+    await page.waitForTimeout(5000);
+  }
+
+  if (page.url().includes("/login")) {
+    await saveDebug(page, "login_failed");
+    throw new Error("ログインに失敗しました。artifacts/login_failed.* を確認してください");
+  }
+}
+
+async function clickNextIfExists(page) {
+  const candidates = page.locator('a, button, [role="button"]');
+  const count = Math.min(await candidates.count(), 200);
+
+  for (let i = 0; i < count; i += 1) {
+    const candidate = candidates.nth(i);
+    const text = clean(await candidate.textContent().catch(() => ""));
+    if (!text.includes("次へ")) continue;
+    const visible = await candidate.isVisible().catch(() => false);
+    if (!visible) continue;
+    const disabled = await candidate.isDisabled().catch(() => false);
+    if (disabled) return false;
+
+    await Promise.allSettled([
+      page.waitForLoadState("networkidle", { timeout: 15000 }),
+      candidate.click({ timeout: 5000 })
+    ]);
+    await page.waitForTimeout(1500);
+    return true;
+  }
+
+  return false;
+}
+
+async function exhaustPage(page) {
+  const seenUrls = new Set();
+
+  for (let pageIndex = 0; pageIndex < 20; pageIndex += 1) {
+    for (let i = 0; i < 12; i += 1) {
+      const before = await page.evaluate(() => document.body.scrollHeight).catch(() => 0);
+      await page.mouse.wheel(0, 8000);
+      await page.waitForTimeout(1200);
+      const after = await page.evaluate(() => document.body.scrollHeight).catch(() => 0);
+      if (after <= before) break;
+    }
+
+    const currentUrl = page.url();
+    if (seenUrls.has(currentUrl)) break;
+    seenUrls.add(currentUrl);
+
+    const moved = await clickNextIfExists(page);
+    if (!moved) break;
+  }
+}
+
+async function collectCards(page, dataType) {
+  const cards = await page.evaluate(({ baseUrl, dataType }) => {
+    const clean = (text) => String(text || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+    const pathNeedle = dataType === "project" ? "/partners/projects/" : "/partners/talents/";
+    const listPath = dataType === "project" ? "/partners/projects" : "/partners/talents";
+    const labels = dataType === "project"
+      ? ["案件", "単価", "勤務地", "スキル", "商流", "開始", "職種"]
+      : ["人材", "単価", "希望単価", "所属", "スキル", "稼働", "開始", "職種"];
+
+    const normalizeHref = (href) => {
+      try { return new URL(href, baseUrl).toString(); } catch { return href || ""; }
+    };
+
+    const isDetailHref = (href) => {
+      if (!href) return false;
+      const abs = normalizeHref(href);
+      try {
+        const u = new URL(abs);
+        return u.pathname.includes(pathNeedle) && u.pathname !== listPath;
+      } catch {
+        return abs.includes(pathNeedle) && !abs.endsWith(listPath);
+      }
+    };
+
+    const scoreText = (text) => labels.reduce((acc, label) => acc + (text.includes(label) ? 1 : 0), 0);
+
+    const chooseContainer = (anchor) => {
+      let node = anchor;
+      let best = anchor;
+      let bestScore = -1;
+      for (let depth = 0; node && depth < 7; depth += 1, node = node.parentElement) {
+        const text = clean(node.innerText || "");
+        if (!text || text.length < 20 || text.length > 6000) continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.width < 200 || rect.height < 40) continue;
+        const score = scoreText(text) + Math.min(Math.floor(text.length / 120), 4);
+        if (score > bestScore) {
+          best = node;
+          bestScore = score;
+        }
+      }
+      return best;
+    };
+
+    const anchors = Array.from(document.querySelectorAll("a[href]"))
+      .filter(a => isDetailHref(a.getAttribute("href") || a.href));
+
+    const rows = anchors.map(anchor => {
+      const container = chooseContainer(anchor);
+      const text = clean(container?.innerText || anchor.innerText || "");
+      return {
+        href: normalizeHref(anchor.getAttribute("href") || anchor.href || ""),
+        anchorText: clean(anchor.innerText || anchor.textContent || ""),
+        text,
+        y: container?.getBoundingClientRect?.().top ?? anchor.getBoundingClientRect?.().top ?? 0
+      };
+    }).filter(row => row.href && row.text && row.text.length >= 20);
+
+    const dedup = [];
+    const seen = new Set();
+    for (const row of rows.sort((a, b) => a.y - b.y)) {
+      if (seen.has(row.href)) continue;
+      seen.add(row.href);
+      dedup.push(row);
+    }
+
+    if (dedup.length) return dedup;
+
+    const fallbackNodes = Array.from(document.querySelectorAll("article, li, section, div"));
+    const fallback = [];
+    for (const node of fallbackNodes) {
+      const text = clean(node.innerText || "");
+      if (!text || text.length < 40 || text.length > 5000) continue;
+      const hitCount = scoreText(text);
+      if (hitCount < 2) continue;
+      const link = node.querySelector("a[href]");
+      fallback.push({
+        href: normalizeHref(link?.getAttribute("href") || link?.href || ""),
+        anchorText: clean(link?.innerText || ""),
+        text,
+        y: node.getBoundingClientRect().top
+      });
+    }
+
+    return fallback.sort((a, b) => a.y - b.y).slice(0, 500);
+  }, { baseUrl: BASE_URL, dataType });
+
+  const unique = [];
+  const seen = new Set();
+  for (const card of cards) {
+    const key = `${card.href}__${card.text.slice(0, 80)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(card);
+  }
+  return unique;
+}
+
+async function extractDetail(context, url, namePrefix) {
+  if (!url) {
+    return { url: "", heading: "", text: "" };
+  }
+
+  const page = await context.newPage();
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.mouse.wheel(0, 2500).catch(() => {});
+    await page.waitForTimeout(800);
+
+    const payload = await page.evaluate(() => {
+      const clean = (text) => String(text || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+      const heading = clean(
+        document.querySelector("h1")?.innerText ||
+        document.querySelector("h2")?.innerText ||
+        document.querySelector("main h3")?.innerText ||
+        document.title ||
+        ""
+      );
+      const article = document.querySelector("main") || document.body;
+      const text = String(article?.innerText || "").replace(/\u00a0/g, " ").trim();
+      return { heading, text };
+    });
+
+    return { url, heading: clean(payload.heading), text: preserveMultiline(payload.text) };
+  } catch (error) {
+    await saveDebug(page, `${namePrefix}_detail_error`).catch(() => {});
+    return { url, heading: "", text: "" };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function run() {
+    while (cursor < items.length) {
+      const current = cursor;
+      cursor += 1;
+      results[current] = await worker(items[current], current);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length || 1) }, () => run()));
+  return results;
+}
+
+async function collectRecords(page, context, dataType) {
+  const cards = await collectCards(page, dataType);
+  await saveJson(`${dataType}_cards`, cards);
+
+  const details = await mapWithConcurrency(cards, 4, async (card, index) => {
+    return extractDetail(context, card.href, `${dataType}_${index + 1}`);
+  });
+
+  const records = cards.map((card, index) => {
+    const detail = details[index] || { url: card.href, heading: "", text: "" };
+    return dataType === "project"
+      ? buildProjectRecord(card, detail)
+      : buildTalentRecord(card, detail);
+  }).filter(row => {
+    const title = dataType === "project" ? row.project_title : row.talent_title;
+    return clean(title) || clean(row.url) || clean(row.raw_text);
+  });
+
+  await saveJson(`${dataType}_preview`, records.slice(0, 20));
+  return records;
+}
+
+export async function scrapeChoTatsu() {
+  await ensureArtifactsDir();
+  const { browser, context } = await buildBrowser();
   const page = await context.newPage();
 
   try {
     await login(page);
 
-    await page.goto(PROJECTS_URL, { waitUntil: "domcontentloaded" });
+    await page.goto(PROJECTS_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
     await exhaustPage(page);
     await saveDebug(page, "projects_page");
+    const projects = await collectRecords(page, context, "project");
 
-    const projectCards = await collectListingCards(page, "project");
-
-    await page.goto(TALENTS_URL, { waitUntil: "domcontentloaded" });
+    await page.goto(TALENTS_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
     await exhaustPage(page);
     await saveDebug(page, "talents_page");
-
-    const talentCards = await collectListingCards(page, "talent");
-
-    const projects = await processCardsToRecords(context, projectCards, "project");
-    const talents = await processCardsToRecords(context, talentCards, "talent");
-
-    await saveJson("projects_preview", projects.slice(0, 10));
-    await saveJson("talents_preview", talents.slice(0, 10));
+    const talents = await collectRecords(page, context, "talent");
 
     if (!projects.length && !talents.length) {
       throw new Error("案件・人材ともに0件でした。セレクタ調整が必要です");
@@ -817,10 +698,11 @@ export async function scrapeChoTatsu() {
 
     return { projects, talents };
   } catch (error) {
-    await saveDebug(page, "fatal_error");
+    await saveDebug(page, "fatal_error").catch(() => {});
     throw error;
   } finally {
-    await context.close();
-    await browser.close();
+    await page.close().catch(() => {});
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
   }
 }
